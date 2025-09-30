@@ -1,10 +1,10 @@
 from pydantic import BaseModel
 
-class PredictRequest(BaseModel):
+class PredictStatsRequest(BaseModel):
     line: str
-    time: str
+    station: str
 
-class PredictResponse(BaseModel):
+class PredictStatsResponse(BaseModel):
     line: str
-    time: str
-    congestion: str
+    station: str
+    predicted_count: float

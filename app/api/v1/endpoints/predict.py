@@ -1,14 +1,12 @@
 # 예측 API
 
 from fastapi import APIRouter
-from app.schemas.predict import PredictRequest, PredictResponse
+from app.schemas.predict import PredictStatsRequest, PredictStatsResponse
+from app.services.model import predict_stats
 
 router = APIRouter()
 
-@router.post("/", response_model=PredictResponse)
-def predict(req: PredictRequest):
-    return {
-        "line": req.line,
-        "time": req.time,
-        "congestion": "중간"  # TODO: 모델 예측으로 변경
-    }
+@router.post("/", response_model=PredictStatsResponse)
+def predict_stats_api(req: PredictStatsRequest):
+    pred = predict_stats(req.line, req.station)
+    return PredictStatsResponse(line=req.line, station=req.station, predicted_count=pred)
