@@ -1,5 +1,5 @@
 from joblib import load
-from app.services.preprocessing import preprocess_stats_response
+from app.services.preprocessing import preprocess_stats_time_response
 from app.utils.model_loader import get_latest_model_path
 
 # 최신 모델 경로 얻기
@@ -17,7 +17,7 @@ row = {
 }
 
 # 전처리 함수로 x 추출 (y는 예측용이니 무시해도 됨)
-result = preprocess_stats_response(row)
+result = preprocess_stats_time_response(row)
 if result is None:
     print("❌ 전처리 실패: row가 이상함")
 else:
