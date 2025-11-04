@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+
+data/
+
+test_predict.py
+test_sub_predict.py
+train.py
