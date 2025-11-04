@@ -1,19 +1,27 @@
 import pickle
 import numpy as np
 from fastapi import HTTPException
-from ..config.settings import MODEL_PATH
+# from ..config.settings import MODEL_PATH
 from ..schemas.predict import CongestionDetail, CongestionResponse, CongestionRequest
 from ..utils.feature_utils import create_features_for_prediction
 
 # 모델 로드 (서버 시작 시 한 번만)
-congestion_model = None
-try:
-    with open(MODEL_PATH, 'rb') as f:
-        congestion_model = pickle.load(f)
-    print(f"[Service] 모델 로드 성공: {MODEL_PATH}")
-except Exception as e:
-    print(f"[Service CRITICAL ERROR] 모델 로드 실패: {e}")
-    congestion_model = None
+#congestion_model = None
+#try:
+#    with open(MODEL_PATH, 'rb') as f:
+#        congestion_model = pickle.load(f)
+#    print(f"[Service] 모델 로드 성공: {MODEL_PATH}")
+#except Exception as e:
+#    print(f"[Service CRITICAL ERROR] 모델 로드 실패: {e}")
+#    congestion_model = None
+
+def get_congestion_prediction(req: CongestionRequest, congestion_model): 
+    if congestion_model is None:
+        raise HTTPException(
+            status_code=500, 
+            detail="Congestion model not initialized. Please check server logs."
+        )
+        pass
 
 
 def get_congestion_prediction(request: CongestionRequest) -> CongestionResponse:
