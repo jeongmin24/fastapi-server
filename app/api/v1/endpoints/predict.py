@@ -9,14 +9,14 @@ from datetime import datetime
 import joblib
 import pandas as pd
 import numpy as np
-from huggingface_hub import hf_hub_download  # ✨ Hugging Face Hub 라이브러리 추가
+from huggingface_hub import hf_hub_download  # Hugging Face Hub 라이브러리 추가
 
 router = APIRouter()
 
 # 모델 파일이 포함된 저장소 ID (사용자명/저장소명)
 HF_REPO_ID = "gcanoca/SubwayCongestionPkl"
 # 저장소에 있는 모델 파일의 정확한 이름
-MODEL_FILENAME = "lines_CardSubwayTime_model_20251104.pkl"
+MODEL_FILENAME = "lines_CardSubwayTime_model_20251105.pkl"
 
 # --- 모델 로드 로직 시작 ---
 try:
