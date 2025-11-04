@@ -9,7 +9,7 @@ from datetime import datetime
 import joblib
 import pandas as pd
 import numpy as np
-from huggingface_hub import hf_hub_download  # ✨ Hugging Face Hub 라이브러리 추가
+from huggingface_hub import hf_hub_download  # Hugging Face Hub 라이브러리 추가
 
 router = APIRouter()
 
