@@ -1,14 +1,14 @@
 # 예측 API (predict_router.py 또는 유사한 파일)
 
+import joblib
+import pandas as pd
+import numpy as np
 from fastapi import APIRouter, HTTPException, status
 from app.schemas.predict import PredictSingleRequest, PredictSingleResponse, CongestionRequest, CongestionResponse
 from app.services.predict import parse_datetime_kst, predict_single  # app.services.predict에 필요한 함수가 있다고 가정합니다.
 from app.services.prediction_service import \
     get_congestion_prediction  # app.services.prediction_service에 필요한 함수가 있다고 가정합니다.
 from datetime import datetime
-import joblib
-import pandas as pd
-import numpy as np
 from huggingface_hub import hf_hub_download  # Hugging Face Hub 라이브러리 추가
 
 router = APIRouter()
