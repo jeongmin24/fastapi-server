@@ -2,6 +2,10 @@
 fastapi==0.120.4
 uvicorn==0.38.0
 
+# FastAPI 환경 설정 관련 모듈 (누락된 모듈 추가)
+pydantic-settings==2.11.0 
+python-dotenv==1.2.1
+
 # 데이터 처리 및 과학 계산
 numpy==2.2.6
 pandas==2.3.3
@@ -12,9 +16,7 @@ patsy==1.0.2
 # 모델 로드 및 사용
 joblib==1.5.2
 scikit-learn==1.7.2
-lightgbm==4.6.0  # LightGBM 모델을 사용하므로 필수
-
-# Hugging Face 모델 로드에 필수
+lightgbm==4.6.0
 huggingface-hub==1.0.1
 
 # FastAPI가 의존하는 주요 라이브러리
@@ -24,8 +26,5 @@ httpcore==1.0.9
 httpx==0.28.1
 requests==2.32.5
 
-# 환경 변수 사용 시 필요
-python-dotenv==1.2.1
-
-# 기타 (FastAPI 구동 시 자동으로 필요할 수 있는 패키지)
+# 기타
 typing-extensions==4.15.0
