@@ -1,0 +1,23 @@
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyd
+*.so
+.pytest_cache/
+
+# IDE/OS files
+.idea/
+.vscode/
+.DS_Store
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# .pkl 파일들을 Git 추적 대상에서 제외합니다.
+models/
+
+# 기타 대용량 로그 파일 등
+logs/
+*.log
