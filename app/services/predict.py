@@ -1,17 +1,19 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+# services/predict.py
+
+from fastapi import HTTPException
 from datetime import datetime
 from huggingface_hub import hf_hub_download
 import joblib
 import numpy as np
 import pandas as pd
+# app.config.settings는 KST 정의를 제공한다고 가정합니다.
 from app.config.settings import KST
-from app.services.preprocessing import preprocess_stats_time_response
-from app.schemas.predict import PredictSingleRequest, PredictSingleResponse
 
-router = APIRouter()
+# app.services.preprocessing는 이 파일에서 사용하지 않으므로 삭제했습니다.
+# app.schemas.predict는 이 파일에서 사용하지 않으므로 삭제했습니다.
 
-# 모델 파일 정보
+
+# 모델 파일 정보 (유지)
 HF_REPO_ID = "gcanoca/SubwayCongestionPkl"
 MODEL_FILENAME = "lines_CardSubwayTime_model_20251105.pkl"
 
@@ -30,7 +32,7 @@ FEATURE_COLUMNS_V1 = [
 
 
 # ---------------------
-# 공용 함수들
+# 공용 함수들 (유지)
 # ---------------------
 def parse_datetime_kst(dt_str: str) -> datetime:
     dt = datetime.fromisoformat(dt_str)
@@ -39,7 +41,15 @@ def parse_datetime_kst(dt_str: str) -> datetime:
     return dt.astimezone(KST)
 
 
-def build_feature_row(dt_kst, line, station, line_encoder, station_encoder):
+# 🌟 수정: build_feature_row 함수가 전역 변수를 사용하도록 변경
+def build_feature_row(dt_kst: datetime, line: str, station: str):
+    global line_encoder, station_encoder
+
+    # 모델 로드가 완료되었는지 (즉, 인코더가 있는지) 확인하는 로직이 필요하다면 추가
+    if line_encoder is None or station_encoder is None:
+        raise RuntimeError("인코더가 로드되지 않았습니다. predict_single 함수를 먼저 호출해야 합니다.")
+
+    # 인코더가 전역 변수에 로드되어 있다고 가정하고 사용합니다.
     return {
         "year": dt_kst.year,
         "month": dt_kst.month,
@@ -49,8 +59,34 @@ def build_feature_row(dt_kst, line, station, line_encoder, station_encoder):
     }
 
 
-def predict_single(line: str, station: str, dt_kst: datetime, model, line_encoder, station_encoder):
-    feats = build_feature_row(dt_kst, line, station, line_encoder, station_encoder)
+def predict_single(line: str, station: str, dt_kst: datetime):
+    global model, line_encoder, station_encoder
+
+    # 1. Lazy Loading (첫 요청 시 모델 로드)
+    if model is None:
+        try:
+            print(f"Lazy-loading model from Hugging Face: {HF_REPO_ID}/{MODEL_FILENAME}")
+            downloaded_file_path = hf_hub_download(
+                repo_id=HF_REPO_ID,
+                filename=MODEL_FILENAME,
+                repo_type="dataset",
+                cache_dir="/tmp"
+            )
+
+            bundle = joblib.load(downloaded_file_path)
+            model = bundle["model"]
+            line_encoder = bundle["line_encoder"]
+            station_encoder = bundle["station_encoder"]
+            print(" Model loaded successfully (lazy load).")
+
+        except Exception as e:
+            # 모델 로드 실패 시, endpoints에서 잡을 수 있도록 RuntimeError 발생
+            raise RuntimeError(f"모델 로드 실패: {e}")
+
+    # 2. 특징 추출 (build_feature_row는 이제 모델/인코더 인자를 받지 않습니다)
+    feats = build_feature_row(dt_kst, line, station)
+
+    # 3. 예측 실행
     X = pd.DataFrame([[feats[c] for c in FEATURE_COLUMNS_V1]], columns=FEATURE_COLUMNS_V1)
 
     yhat = model.predict(X)[0]
@@ -58,63 +94,3 @@ def predict_single(line: str, station: str, dt_kst: datetime, model, line_encode
     pred_gtoff = max(0, int(round(yhat[1])))
 
     return pred_gton, pred_gtoff, feats
-
-
-# ---------------------
-# 실제 엔드포인트
-# ---------------------
-@router.post("/predict", response_model=PredictSingleResponse)
-def predict_endpoint(req: PredictSingleRequest):
-    global model, line_encoder, station_encoder
-
-    # ❗ 모델이 아직 로드 안 됐으면, 요청 시점에 한 번만 로드
-    if model is None:
-        try:
-            print(f"🔄 Lazy-loading model from Hugging Face: {HF_REPO_ID}/{MODEL_FILENAME}")
-            downloaded_file_path = hf_hub_download(
-                repo_id=HF_REPO_ID,
-                filename=MODEL_FILENAME,
-                repo_type="dataset",
-                cache_dir="/tmp"  # Render의 임시 디스크 사용 (RAM 절약)
-            )
-
-            bundle = joblib.load(downloaded_file_path)
-            model = bundle["model"]
-            line_encoder = bundle["line_encoder"]
-            station_encoder = bundle["station_encoder"]
-            print("✅ Model loaded successfully (lazy load).")
-
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"모델 로드 실패: {e}")
-
-    # 요청 처리
-    try:
-        dt_kst = parse_datetime_kst(req.datetime)
-    except Exception:
-        raise HTTPException(status_code=400, detail="datetime은 ISO8601 형식이어야 합니다.")
-
-    try:
-        gton, gtoff, feats = predict_single(
-            req.line, req.station, dt_kst,
-            model=model,
-            line_encoder=line_encoder,
-            station_encoder=station_encoder
-        )
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"예측 실패: {e}")
-
-    # 변환 및 응답 생성
-    features_used = {k: (int(v) if isinstance(v, (int, bool, np.integer)) else v)
-                     for k, v in feats.items()}
-
-    return PredictSingleResponse(
-        line=req.line,
-        station=req.station,
-        datetime=dt_kst.isoformat(),
-        pred_gton=float(gton),
-        pred_gtoff=float(gtoff),
-        predicted_count=float(gton + gtoff),
-        features_used=features_used
-    )
