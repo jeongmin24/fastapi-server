@@ -13,44 +13,6 @@ from huggingface_hub import hf_hub_download  # Hugging Face Hub 라이브러리 
 
 router = APIRouter()
 
-# 모델 파일이 포함된 저장소 ID (사용자명/저장소명)
-HF_REPO_ID = "gcanoca/SubwayCongestionPkl"
-# 저장소에 있는 모델 파일의 정확한 이름
-MODEL_FILENAME = "lines_CardSubwayTime_model_20251105.pkl"
-
-# --- 모델 로드 로직 시작 ---
-try:
-    print(f"Loading model from Hugging Face Hub: {HF_REPO_ID}/{MODEL_FILENAME}...")
-
-    # 1. Hugging Face Hub에서 모델 파일 다운로드
-    # 파일은 런타임 환경의 임시 디렉토리에 저장됩니다.
-    downloaded_file_path = hf_hub_download(
-        repo_id=HF_REPO_ID,
-        filename=MODEL_FILENAME,
-        # repo_type="dataset" 또는 "model"을 명시할 수도 있습니다.
-        repo_type="dataset"
-    )
-
-    # 2. joblib을 사용하여 다운로드된 파일에서 모델 로드
-    bundle = joblib.load(downloaded_file_path)
-    model = bundle["model"]
-    line_encoder = bundle["line_encoder"]
-    station_encoder = bundle["station_encoder"]
-
-    print("Model loaded successfully.")
-
-except Exception as e:
-    # 모델 로드 실패는 치명적이므로, 앱 시작을 중단해야 합니다.
-    # Render 환경에서 빌드 또는 시작 단계에서 이 에러가 발생하면 배포가 실패합니다.
-    error_message = f"FATAL: Model loading failed from Hugging Face Hub. Check HF_REPO_ID, MODEL_FILENAME, and network connectivity. Error: {e}"
-    print(error_message)
-    # 실제 프로덕션 코드에서는 이 지점에서 예외를 발생시켜 서버 시작을 막아야 합니다.
-    raise RuntimeError(error_message)
-
-
-# --- 모델 로드 로직 끝 ---
-
-
 @router.post("/predict", response_model=PredictSingleResponse)
 def predict_endpoint(req: PredictSingleRequest):
     """
