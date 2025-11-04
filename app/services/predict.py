@@ -19,7 +19,7 @@ class FeatureJoiner:
         return {
             "weekday": dt_kst.weekday(),            # 0=월 ~ 6=일
             "is_weekend": int(dt_kst.weekday() >= 5)
-            # TODO: 공휴일/날씨/이벤트 등 추가
+            # 공휴일/날씨/이벤트 등 추가
         }
 
 feature_joiner = FeatureJoiner()
