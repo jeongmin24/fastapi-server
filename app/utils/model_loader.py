@@ -3,11 +3,9 @@ import joblib
 from functools import lru_cache
 from huggingface_hub import hf_hub_download  # Hugging Face Hub import
 
-# --- ⚠️ **필수 수정 사항:** 이 정보를 사용자님의 것으로 변경하세요. ---
-# 모델 파일이 포함된 Hugging Face Repository ID
 HF_REPO_ID = "gcanoca/SubwayCongestionPkl"
 # 저장소에 있는 모델 파일의 정확한 이름
-FIXED_MODEL_NAME = "lines_CardSubwayTime_model_20251104.pkl"
+FIXED_MODEL_NAME = "lines_CardSubwayTime_model_20251105.pkl"
 # Private Repository 접근 시 사용할 토큰 (Public이면 None 유지)
 HF_TOKEN = None
 # ------------------------------------------------------------------
@@ -17,7 +15,6 @@ FEATURE_COLUMNS_V1 = ["year", "month", "hour"]
 
 # @lru_cache를 사용하여 모델 객체가 메모리에 한 번만 로드되도록 합니다.
 @lru_cache(maxsize=1)
-# 💡 함수명을 'load_latest_model'로 복구하여 ImportError를 해결합니다.
 def load_latest_model(line: str = None, station: str = None):
     """
     Hugging Face Hub에서 고정된 모델을 로드합니다.
