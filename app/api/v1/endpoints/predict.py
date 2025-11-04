@@ -30,11 +30,9 @@ def predict_endpoint(req: PredictSingleRequest):
         gton, gtoff, feats = predict_single(
             req.line,
             req.station,
-            dt_kst,
-            model=model,
-            line_encoder=line_encoder,
-            station_encoder=station_encoder
+            dt_kst
         )
+
     except FileNotFoundError as e:
         # 특정 호선/역 모델이 없는 경우 (모델 로드 시 처리되었으나, 혹시 모를 내부 로직을 위해 유지)
         raise HTTPException(status_code=404, detail=str(e))
