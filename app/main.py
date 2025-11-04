@@ -31,7 +31,7 @@ def create_app():
 
 app = create_app()
 #
-# print("✅ 라우터 목록:")
+# print("라우터 목록:")
 # for route in app.routes:
 #     print(route.path)
 

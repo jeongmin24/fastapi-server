@@ -31,7 +31,7 @@ CURRENT_DIR = os.path.dirname(CURRENT_FILE_PATH)
 # .../app/config -> .../app -> .../fastapi-server (프로젝트 루트)
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, '..', '..'))
 
-# 0. 파일 및 경로 설정
+# 파일 및 경로 설정
 MODEL_FILE_NAME = 'train_congestion_model.pkl'
 
 # 모델 폴더 경로: 프로젝트 루트 아래의 'models' 폴더

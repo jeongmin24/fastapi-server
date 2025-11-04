@@ -29,7 +29,7 @@ def fetch_api(url: str):
                 # 다른 에러 코드 (예: 인증 오류 등)
                 raise HTTPException(status_code=400, detail=f"{code}: {message}")
         else:
-            # ✅ RESULT 자체가 없으면 정상 데이터로 간주
+            # RESULT 자체가 없으면 정상 데이터로 간주
             return data
 
     except requests.exceptions.Timeout:
