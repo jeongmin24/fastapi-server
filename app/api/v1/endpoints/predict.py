@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.schemas.predict import PredictSingleRequest, PredictSingleResponse, CongestionRequest, CongestionResponse
 from app.services.predict import parse_datetime_kst, predict_single
 from app.services.prediction_service import get_congestion_prediction
+from ..config.settings import HF_REPO_ID, PREDICTION_MODEL_FILENAME
 from datetime import datetime
 import joblib
 import pandas as pd
@@ -21,14 +22,14 @@ MODEL_BUNDLE = {
     "station_encoder": None
 }
 
-# ⭐️ 3. 모델 로드 로직을 지연 실행 함수로 정의 ⭐️
+# 3. 모델 로드 로직을 지연 실행 함수로 정의 
 def load_model_bundle():
     """모델이 로드되지 않았을 경우에만 Hugging Face에서 다운로드 및 로드합니다."""
     # 이미 로드되었는지 확인 -> 두 번째 요청부터는 재로드 방지
     if MODEL_BUNDLE["model"] is not None:
         return
 
-    print(f"⭐️ Starting Lazy Load: Downloading and loading model from {HF_REPO_ID}/{MODEL_FILENAME}...")
+    print(f"Starting Lazy Load: Downloading and loading model from {HF_REPO_ID}/{MODEL_FILENAME}...")
     try:
         # Hugging Face Hub에서 모델 파일 다운로드 (임시 디렉토리에 저장)
         downloaded_file_path = hf_hub_download(
