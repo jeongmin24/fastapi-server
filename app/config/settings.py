@@ -32,13 +32,13 @@ CURRENT_DIR = os.path.dirname(CURRENT_FILE_PATH)
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, '..', '..'))
 
 # 파일 및 경로 설정
-MODEL_FILE_NAME = 'train_congestion_model.pkl'
+# MODEL_FILE_NAME = 'train_congestion_model.pkl'
 
 # 모델 폴더 경로: 프로젝트 루트 아래의 'models' 폴더
-MODEL_DIR = os.path.join(PROJECT_ROOT, 'models')
+# MODEL_DIR = os.path.join(PROJECT_ROOT, 'models')
 
 # 최종 모델 경로 (절대 경로)
-MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILE_NAME) # <-- 이제 항상 프로젝트 루트를 기준으로 찾습니다.
+# MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILE_NAME) # <-- 이제 항상 프로젝트 루트를 기준으로 찾습니다.
 
 # 모델 학습에 사용했던 변수 (환승역, 업무역)
 TRANSFER_STATION_LIST = ['신도림역', '사당역', '을지로입구역', '불암산역']
