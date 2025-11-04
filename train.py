@@ -1,66 +1,23 @@
 import os
-import requests
 import pandas as pd
 import joblib
 import numpy as np
 from dateutil.relativedelta import relativedelta
-from datetime import datetime, timedelta
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
-from sklearn.multioutput import MultiOutputRegressor
+from datetime import datetime, timedelta
 
-# 프로젝트 구조에 따라 경로 수정 필요
+from sklearn.multioutput import MultiOutputRegressor
+from sklearn.preprocessing import LabelEncoder
+
 from app.common.fetch import fetch_api
 from app.config.settings import GENERAL_KEY
 from app.services.preprocessing import preprocess_stats_time_response
 
-# ----------------------------------------------------------------------
-# ⚡️ 통합 모델 학습 상수
-# ----------------------------------------------------------------------
-INTEGRATED_FEATURES = ["year", "month", "hour", "line_station"]  # 통합 모델에 사용할 특징
-TARGET_API_ROW_LIMIT = 1000  # API 호출 시 한 번에 가져올 최대 행 수 (서울시 API 기준)
 
-
-# ----------------------------------------------------------------------
-# 1. 지원하는 모든 역/호선 리스트 구하기 (자동 수집)
-# ----------------------------------------------------------------------
-def get_all_active_stations() -> list[tuple[str, str]]:
-    """
-    API를 호출하여 현재 운영 중인 모든 역과 호선 정보를 가져옵니다.
-    """
-    # 🚨 API 경로는 실제 지하철 역 정보 API 엔드포인트로 변경해야 합니다.
-    # 서울시 지하철역 정보 API (예시)
-    url = f"http://openapi.seoul.go.kr:8088/{GENERAL_KEY}/json/SearchSTNBySubwayLineInfo/1/{TARGET_API_ROW_LIMIT}/"
-
-    try:
-        raw = fetch_api(url)
-        rows = raw.get("SearchSTNBySubwayLineInfo", {}).get("row", [])
-    except Exception as e:
-        print(f"🚨 지하철 역 정보 API 호출 오류: {e}")
-        return []
-
-    station_list = []
-
-    for row in rows:
-        line = row.get("LINE_NUM")  # 예: '2호선'
-        station = row.get("STN_NM")  # 예: '강남'
-
-        if line and station:
-            # 일반적으로 1호선~9호선과 같은 정식 노선만 포함
-            if line.replace("호선", "").isdigit() or line in ["신분당선", "경의중앙선"]:
-                station_list.append((line, station))
-
-    # 중복 제거 (예: 서울역은 여러 호선에 존재하므로)
-    unique_stations = sorted(list(set(station_list)))
-    print(f"✅ 총 {len(unique_stations)}개의 고유 역/호선 쌍 수집 완료.")
-    return unique_stations
-
-
-# ----------------------------------------------------------------------
-# 2. 최근 6개월 리스트 구하기
-# ----------------------------------------------------------------------
+# 1. 최근 6개월 리스트 구하기
 def get_recent_months(n_months: int = 6) -> list[str]:
     today = datetime.today()
     months = [
@@ -71,118 +28,155 @@ def get_recent_months(n_months: int = 6) -> list[str]:
     return months
 
 
-# 3. 특정 날짜 지하철 승하차 인원을 JSON 형태 -> pandas DataFrame으로 변환
-def build_dataset_for_date(date: str, line: str = None, station: str = None):
-    url = f"http://openapi.seoul.go.kr:8088/{GENERAL_KEY}/json/CardSubwayTime/1/{TARGET_API_ROW_LIMIT}/{date}"
-    if line:
-        url += f"/{line}"
-    if station:
-        url += f"/{station}"
-
+# 2. 특정 날짜 지하철 승하차 인원을 JSON 형태 -> pandas DataFrame으로 변환
+# API: 서울 열린데이터 광장 지하철 호선별 역별 시간대별 승객 현황 조회
+def build_dataset_for_date(date: str):
+    # 특정 노선, 역 필터 없이 최대 1000개의 데이터를 가져옴
+    url = f"http://openapi.seoul.go.kr:8088/{GENERAL_KEY}/json/CardSubwayTime/1/1000/{date}"
     raw = fetch_api(url)
     rows = raw.get("CardSubwayTime", {}).get("row", [])
     df = pd.DataFrame(rows)
     return df
 
 
-# ----------------------------------------------------------------------
-# 4. 통합 모델 학습 파이프라인
-# ----------------------------------------------------------------------
-def train_integrated_model(months: list[str], target_stations: list[tuple[str, str]]):
+# 학습 전체 파이프라인 (모든 역/호선 통합 학습)
+def train_all_lines_and_stations(months: list[str]):
+    all_dfs = []
+    for m in months:
+        print(f"📅 {m} 데이터 수집 중...")
+        # 모든 노선/역 데이터를 로드
+        df = build_dataset_for_date(m)
+
+        if df.empty:
+            print(f"⚠️ {m} 데이터 없음. 건너뜀")
+            continue
+        print(f"➡️ {len(df)}개의 행이 로드됨")
+        all_dfs.append(df)
+
+    if not all_dfs:
+        print("🚨 학습할 데이터가 없습니다.")
+        return
+
+    master_df = pd.concat(all_dfs, ignore_index=True)
+
+    # --- 특징 엔지니어링: 노선과 역 이름을 숫자로 변환 (Label Encoding) ---
+    line_encoder = LabelEncoder()
+    station_encoder = LabelEncoder()
+
+    # Key Error 발생 문제를 해결하기 위해 실제 컬럼명으로 수정
+    LINE_COL = 'SBWY_ROUT_LN_NM'
+    STATION_COL = 'STTN'
+
+    print(f"📊 master_df 컬럼 목록: {master_df.columns.tolist()}")
+
+    # 1. 컬럼 존재 확인 및 에러 핸들링
+    required_cols = [LINE_COL, STATION_COL]
+
+    # 필요한 컬럼이 master_df에 모두 존재하는지 확인
+    missing_cols = [col for col in required_cols if col not in master_df.columns]
+
+    if missing_cols:
+        print(f"❌ DataFrame에 필수 컬럼이 없습니다: {missing_cols}")
+        print("API 응답 스키마를 확인하십시오.")
+        return
+
+    print(f"✅ 필수 컬럼 확인 완료: {LINE_COL}, {STATION_COL}")
+
+    # 2. 결측치(NaN) 방지 및 인코딩 실행
+    master_df[LINE_COL] = master_df[LINE_COL].fillna('UnknownLine')
+    master_df[STATION_COL] = master_df[STATION_COL].fillna('UnknownStation')
+
+    master_df['LINE_NUM_ENCODED'] = line_encoder.fit_transform(master_df[LINE_COL])
+    master_df['STATION_NAME_ENCODED'] = station_encoder.fit_transform(master_df[STATION_COL])
+
+    print(f"⚙️ 총 {len(line_encoder.classes_)}개 호선, {len(station_encoder.classes_)}개 역 인코딩 완료.")
+    # -----------------------------------------------------------------
+
     x_list = []
     y_list = []
 
-    for line, station in target_stations:  # 모든 역/호선 쌍을 순회
-        line_station_key = f"{line}_{station}"  # 고유 키: 2호선_강남
+    # 전처리 함수 호출 시 인코딩된 값도 함께 전달
+    for _, row in master_df.iterrows():
+        # 인코딩된 값을 딕셔너리 형태로 전달하여 preprocessing 함수에서 사용할 수 있게 함
+        row_with_encoded = row.to_dict()
+        row_with_encoded['LINE_NUM_ENCODED'] = row['LINE_NUM_ENCODED']
+        row_with_encoded['STATION_NAME_ENCODED'] = row['STATION_NAME_ENCODED']
 
-        for m in months:
-            # print(f"📅 {m} [{line_station_key}] 데이터 수집 중...") # 로그가 너무 길어질 수 있음
+        # preprocess_stats_time_response는 [year, month, hour]를 반환할 것임
+        results = preprocess_stats_time_response(row_with_encoded)
 
-            # 특정 역의 데이터만 API로 호출해서 DataFrame 얻기 (API 효율을 위해)
-            df = build_dataset_for_date(m, line=line, station=station)
+        if not results:
+            continue
 
-            if df.empty:
-                continue
+        # 시간대 별 샘플 (x, y)를 분해하고 인코딩된 특징을 x에 추가
+        line_enc = row['LINE_NUM_ENCODED']
+        station_enc = row['STATION_NAME_ENCODED']
 
-            for _, row in df.iterrows():
-                results = preprocess_stats_time_response(row)
-                if not results:
-                    continue
+        for x_base, y in results:  # x_base = [year, month, hour]
+            # 최종 입력 특징: [year, month, hour, line_encoded, station_encoded]
+            x_final = x_base + [line_enc, station_enc]
+            x_list.append(x_final)
+            y_list.append(y)
 
-                for x, y in results:  # 시간대 별로 분해된 샘플들
-                    # 🚨 특징 확장: 역/호선 특징 추가
-                    x['line_station'] = line_station_key
-                    x_list.append(x)
-                    y_list.append(y)
+    # x_list: 입력 데이터(features)
+    X_cols = ["year", "month", "hour", "line_encoded", "station_encoded"]
+    y_cols = ["gton", "gtoff"]
 
-    # DataFrame 생성 및 One-Hot Encoding 적용
-    x_combined = pd.DataFrame(x_list, columns=INTEGRATED_FEATURES)
-    y = pd.DataFrame(y_list, columns=["gton", "gtoff"])
+    x = pd.DataFrame(x_list, columns=X_cols)
+    y = pd.DataFrame(y_list, columns=y_cols)
 
-    # 🚨 One-Hot Encoding 적용 🚨
-    # 'line_station' 컬럼을 OHE하여 모든 역 정보를 수치형 특징으로 변환
-    X_final = pd.get_dummies(x_combined, columns=['line_station'], prefix='station')
+    if x.empty:
+        print("🚨 전처리 후 학습 데이터가 생성되지 않았습니다.")
+        return
 
     # 학습/검증 데이터를 8:2로 나눔
-    # OHE 후 컬럼 수가 크게 증가하므로, 메모리 관리가 필요할 수 있습니다.
-    X_train, X_test, y_train, y_test = train_test_split(X_final, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
 
-    print(f"📊 최종 통합 학습 데이터 크기: X={len(X_final)}, 특징(컬럼) 수: {len(X_final.columns)}")
-    print(f"📊 최종 타겟 데이터 크기: Y={len(y)}")
+    print(f"📊 최종 학습 데이터 크기: X={len(x)}, Y={len(y)}")
 
     # MultiOutputRegressor로 학습 진행
-    model = MultiOutputRegressor(RandomForestRegressor(n_estimators=100, n_jobs=-1))  # n_jobs=-1로 병렬 처리
+    model = MultiOutputRegressor(RandomForestRegressor())
     model.fit(X_train, y_train)
 
-    print("✅ 통합 모델 학습 완료!")
-
+    print("✅ 모델 학습 완료!")
     # 모델 평가 및 저장
     evaluate_model(model, X_test, y_test)
-    save_integrated_model(model, X_final.columns.tolist())  # 특징 컬럼 목록도 저장 (예측 시 필요)
+    # 모델과 인코더를 함께 저장
+    save_model_and_encoders(model, line_encoder, station_encoder)
 
 
-# ----------------------------------------------------------------------
-# 5. 모델 저장 (단일 파일) 및 평가
-# ----------------------------------------------------------------------
-def save_integrated_model(model, feature_columns: list[str]):
-    # 이제 모든 예측 데이터를 담은 단일 파일로 저장
-    os.makedirs("models", exist_ok=True)
+# 모델 및 인코더 저장 (하나의 pkl 파일로)
+def save_model_and_encoders(model, line_encoder, station_encoder):
     today = datetime.today().strftime("%Y%m%d")
-    path = f"models/integrated_stats_model_{today}.pkl"
+    os.makedirs("models", exist_ok=True)
 
-    # 모델 객체뿐만 아니라, 예측 시 OHE에 필요한 특징 컬럼 리스트도 함께 저장합니다.
-    joblib.dump({
-        'model': model,
-        'feature_columns': feature_columns
-    }, path)
+    # 모델, 노선 인코더, 역 인코더를 딕셔너리로 묶어 하나의 파일에 저장
+    full_model_package = {
+        "model": model,
+        "line_encoder": line_encoder,
+        "station_encoder": station_encoder
+    }
 
-    print(f"Model saved to {path}")
+    # 파일 이름을 통합 모델임을 나타내도록 변경
+    path = f"models/lines_CardSubwayTime_model_{today}.pkl"
+    joblib.dump(full_model_package, path)
+    print(f"Model and Encoders saved to {path}")
 
 
+# 모델 성능 평가
 def evaluate_model(model, X_test, y_test):
-    # ... (모델 평가 함수는 기존과 동일하게 유지)
     print("🔍 모델 평가 중...")
     pred = model.predict(X_test)
     rmse = np.sqrt(mean_squared_error(y_test, pred))
-    print(f"[{datetime.today()}] 통합 모델 RMSE: {rmse:.2f}")
+    print(f"[{datetime.today()}] RMSE: {rmse:.2f}")
 
     os.makedirs("logs", exist_ok=True)
     with open("logs/eval.log", "a") as f:
-        f.write(f"{datetime.today()} (Integrated) RMSE: {rmse:.2f}\n")
+        f.write(f"[{datetime.today()}] Unified Model RMSE: {rmse:.2f}\n")
 
 
-# ----------------------------------------------------------------------
-# 6. 실행 (Main)
-# ----------------------------------------------------------------------
 if __name__ == "__main__":
-    print("🔥 train.py 시작됨: 통합 모델 학습 모드")
-
-    # 1. 모든 역/호선 정보 자동 수집
-    TARGET_STATIONS = get_all_active_stations()
-
-    if not TARGET_STATIONS:
-        print("🚨 오류: 학습할 역 정보가 API에서 수집되지 않아 학습을 중단합니다.")
-    else:
-        # 2. 통합 모델 학습 실행
-        months = get_recent_months(n_months=6)
-        train_integrated_model(months, TARGET_STATIONS)
+    print("🔥 train.py 시작됨 (통합 학습 모드)")
+    # 최근 6개월 데이터로 학습
+    months = get_recent_months(n_months=9)
+    train_all_lines_and_stations(months)

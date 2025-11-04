@@ -1,35 +1,65 @@
+import joblib
 import pandas as pd
-from joblib import load
-from app.services.preprocessing import preprocess_stats_time_response
-from app.utils.model_loader import load_latest_model, FEATURE_COLUMNS_V1
-from app.services.predict import build_feature_row, parse_datetime_kst
+from datetime import datetime
+import numpy as np
 
+# 모델 로드
+bundle = joblib.load("models/lines_CardSubwayTime_model_20251104.pkl")
+model = bundle["model"]
+line_encoder = bundle["line_encoder"]
+station_encoder = bundle["station_encoder"]
 
-# ✅ 테스트 입력 (실제 API 요청과 동일하게 구성)
-line = "9호선"
-station = "김포공항"
-dt_str = "2025-10-06T08:00:00+09:00"  # 테스트용 datetime
+# 사용자 입력
+line = "8호선"
+station = "석촌"
+now = datetime.now()
 
-# 1️⃣ datetime 문자열을 KST로 변환
-dt_kst = parse_datetime_kst(dt_str)
+# 시간 입력
+year = now.year
+month = now.month
+hour = now.hour
 
-# 2️⃣ feature 생성
-feats = build_feature_row(dt_kst, line, station)
-print(f"📊 생성된 feature: {feats}")
+# 인코딩
+line_encoded = line_encoder.transform([line])[0]
+station_encoded = station_encoder.transform([station])[0]
 
-# 3️⃣ DataFrame으로 변환 (모델 입력 형식 맞추기)
-X = pd.DataFrame([[feats[c] for c in FEATURE_COLUMNS_V1]], columns=FEATURE_COLUMNS_V1)
-print(f"📄 모델 입력 X:\n{X}")
+# 입력 데이터 구성
+X = pd.DataFrame([{
+    "year": year,
+    "month": month,
+    "hour": hour,
+    "line_encoded": line_encoded,
+    "station_encoded": station_encoded
+}])
 
-# 4️⃣ 최신 모델 불러오기 (자동 캐시 로딩)
-model = load_latest_model(line, station)
-
-# 5️⃣ 예측 수행
+# 예측 수행
 yhat = model.predict(X)[0]
-pred_gton = max(0, int(round(yhat[0])))
-pred_gtoff = max(0, int(round(yhat[1])))
 
-# 6️⃣ 결과 출력
-print(f"🎯 예측 결과:")
-print(f"   🚇 승차 인원 예측: {pred_gton}")
-print(f"   🚉 하차 인원 예측: {pred_gtoff}")
+# 결과 해석
+if isinstance(yhat, (list, tuple, np.ndarray)) and len(yhat) == 2:
+    boarding, alighting = yhat
+elif isinstance(yhat, (list, tuple, np.ndarray)) and len(yhat) == 1:
+    boarding, alighting = yhat[0], None
+else:
+    boarding, alighting = yhat, None
+
+# numpy 배열일 경우 첫 원소만 추출
+if isinstance(boarding, (np.ndarray, list)):
+    boarding = boarding[0]
+if isinstance(alighting, (np.ndarray, list)):
+    alighting = alighting[0]
+
+# 혼잡도 계산 (예시)
+if alighting is not None:
+    max_capacity = 1300
+    congestion = (boarding - alighting) / max_capacity * 100
+    congestion = max(0, min(congestion, 200))
+else:
+    congestion = None
+
+# 출력
+print(f"예측 승차인원: {boarding:.0f}")
+if alighting is not None:
+    print(f"예측 하차인원: {alighting:.0f}")
+if congestion is not None:
+    print(f"예상 혼잡도: {congestion:.1f}%")

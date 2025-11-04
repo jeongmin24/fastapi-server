@@ -6,6 +6,13 @@ import pandas as pd
 from app.config.settings import KST
 from app.utils.model_loader import load_latest_model, FEATURE_COLUMNS_V1
 
+FEATURE_COLUMNS_V1 = [
+    "year",
+    "month",
+    "hour",
+    "line_encoded",
+    "station_encoded"
+]
 
 # ---- Feature 확장 훅 ----
 class FeatureJoiner:
@@ -31,23 +38,30 @@ def parse_datetime_kst(dt_str: str) -> datetime:
         return dt.replace(tzinfo=KST)
     return dt.astimezone(KST)
 
-def build_feature_row(dt_kst: datetime, line: str, station: str) -> dict:
-    base = {
+def build_feature_row(dt_kst, line, station, line_encoder, station_encoder):
+    return {
         "year": dt_kst.year,
         "month": dt_kst.month,
         "hour": dt_kst.hour,
+        "line_encoded": int(line_encoder.transform([line])[0]),
+        "station_encoded": int(station_encoder.transform([station])[0])
     }
-    extra = feature_joiner.join(dt_kst, line, station)
-    return {**base, **extra}
 
-def predict_single(line: str, station: str, dt_kst: datetime) -> tuple[int, int, dict]:
-    feats = build_feature_row(dt_kst, line, station)
+
+# predict_single 함수 수정 (모델 재로드 삭제)
+def predict_single(line: str, station: str, dt_kst: datetime, model, line_encoder, station_encoder) -> tuple[
+    int, int, dict]:
+    # 수정 1: 인코딩된 특성을 포함하도록 `feats`를 구성해야 합니다.
+    feats = build_feature_row(dt_kst, line, station, line_encoder, station_encoder)  # 인코더를 인수로 추가
 
     # 모델 입력에 맞춰 컬럼을 '슬라이스'
     X = pd.DataFrame([[feats[c] for c in FEATURE_COLUMNS_V1]], columns=FEATURE_COLUMNS_V1)
 
-    model = load_latest_model(line, station)
-    yhat = model.predict(X)[0]  # [gton, gtoff] 가정
+    # 수정 2: 이 줄을 삭제하거나 주석 처리합니다. 라우터에서 이미 로드한 모델을 사용해야 합니다.
+    # model = load_latest_model(line, station)
+
+    # 전달받은 통합 모델(model)을 사용하여 예측
+    yhat = model.predict(X)[0]
     pred_gton = max(0, int(round(yhat[0])))
     pred_gtoff = max(0, int(round(yhat[1])))
     return pred_gton, pred_gtoff, feats
