@@ -4,8 +4,10 @@ import joblib
 import pandas as pd
 import numpy as np
 from fastapi import APIRouter, HTTPException, status
-from app.schemas.predict import PredictSingleRequest, PredictSingleResponse, CongestionRequest, CongestionResponse
-from app.services.predict import parse_datetime_kst, predict_single  # app.services.predict에 필요한 함수가 있다고 가정합니다.
+from app.schemas.predict import PredictSingleRequest, PredictSingleResponse, CongestionRequest, CongestionResponse, \
+    PredictRequest, PredictResponse
+from app.services.predict import parse_datetime_kst, predict_single, \
+    predict_congestion_service  # app.services.predict에 필요한 함수가 있다고 가정합니다.
 from app.services.prediction_service import \
     get_congestion_prediction  # app.services.prediction_service에 필요한 함수가 있다고 가정합니다.
 from datetime import datetime
@@ -103,3 +105,9 @@ def train_congestion_api(req: CongestionRequest):
     """
     # get_congestion_prediction 함수는 app.services.prediction_service에 정의되어 있다고 가정합니다.
     return get_congestion_prediction(req)
+
+
+@router.post("/predict/congestion", response_model=PredictResponse, summary="경로기반 혼잡도 예측 api")
+async def predict_congestion(request: PredictRequest):
+    response = predict_congestion_service(request)
+    return response
