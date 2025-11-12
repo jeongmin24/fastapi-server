@@ -1,26 +1,14 @@
-# services/predict.py
-
-from fastapi import HTTPException
+# from app.services.model import load_model
+from app.services.preprocessing import preprocess_stats_time_response
+import random
 from datetime import datetime
-from huggingface_hub import hf_hub_download
-import joblib
-import numpy as np
 import pandas as pd
-# app.config.settings는 KST 정의를 제공한다고 가정합니다.
 from app.config.settings import KST
+from app.utils.model_loader import load_latest_model, FEATURE_COLUMNS_V1
+from typing import List
+from app.schemas.predict import PredictResponse, PredictRequest, RouteResponse, SectionResponse, StationResponse, \
+    StartAndEndStationResponse, SectionSummary
 
-# app.services.preprocessing는 이 파일에서 사용하지 않으므로 삭제했습니다.
-# app.schemas.predict는 이 파일에서 사용하지 않으므로 삭제했습니다.
-
-
-# 모델 파일 정보 (유지)
-HF_REPO_ID = "gcanoca/SubwayCongestionPkl"
-MODEL_FILENAME = "lines_CardSubwayTime_model_20251105.pkl"
-
-# 전역 캐시 (처음 한 번만 로드됨)
-model = None
-line_encoder = None
-station_encoder = None
 
 FEATURE_COLUMNS_V1 = [
     "year",
@@ -30,26 +18,31 @@ FEATURE_COLUMNS_V1 = [
     "station_encoded"
 ]
 
+# ---- Feature 확장 훅 ----
+class FeatureJoiner:
+    """
+    서버 내부에서 feature를 점진적으로 확장.
+    모델에 필요한 컬럼만 슬라이스해서 넣기 때문에
+    여기서 더 많은 feature를 추가해도 안전함.
+    """
+    def join(self, dt_kst: datetime, line: str, station: str) -> dict:
+        # 예: 주말/평일, 요일 등 간단 피처부터 시작
+        return {
+            "weekday": dt_kst.weekday(),            # 0=월 ~ 6=일
+            "is_weekend": int(dt_kst.weekday() >= 5)
+            # 공휴일/날씨/이벤트 등 추가
+        }
 
-# ---------------------
-# 공용 함수들 (유지)
-# ---------------------
+feature_joiner = FeatureJoiner()
+
+# 문자열을 KST 기준 datetime 객체로 변환해서 반환
 def parse_datetime_kst(dt_str: str) -> datetime:
     dt = datetime.fromisoformat(dt_str)
     if dt.tzinfo is None:
         return dt.replace(tzinfo=KST)
     return dt.astimezone(KST)
 
-
-# 🌟 수정: build_feature_row 함수가 전역 변수를 사용하도록 변경
-def build_feature_row(dt_kst: datetime, line: str, station: str):
-    global line_encoder, station_encoder
-
-    # 모델 로드가 완료되었는지 (즉, 인코더가 있는지) 확인하는 로직이 필요하다면 추가
-    if line_encoder is None or station_encoder is None:
-        raise RuntimeError("인코더가 로드되지 않았습니다. predict_single 함수를 먼저 호출해야 합니다.")
-
-    # 인코더가 전역 변수에 로드되어 있다고 가정하고 사용합니다.
+def build_feature_row(dt_kst, line, station, line_encoder, station_encoder):
     return {
         "year": dt_kst.year,
         "month": dt_kst.month,
@@ -59,38 +52,94 @@ def build_feature_row(dt_kst: datetime, line: str, station: str):
     }
 
 
-def predict_single(line: str, station: str, dt_kst: datetime):
-    global model, line_encoder, station_encoder
+def predict_single(line: str, station: str, dt_kst: datetime, model, line_encoder, station_encoder) -> tuple[
+    int, int, dict]:
+    feats = build_feature_row(dt_kst, line, station, line_encoder, station_encoder)  # 인코더를 인수로 추가
 
-    # 1. Lazy Loading (첫 요청 시 모델 로드)
-    if model is None:
-        try:
-            print(f"Lazy-loading model from Hugging Face: {HF_REPO_ID}/{MODEL_FILENAME}")
-            downloaded_file_path = hf_hub_download(
-                repo_id=HF_REPO_ID,
-                filename=MODEL_FILENAME,
-                repo_type="dataset",
-                cache_dir="/tmp"
-            )
-
-            bundle = joblib.load(downloaded_file_path)
-            model = bundle["model"]
-            line_encoder = bundle["line_encoder"]
-            station_encoder = bundle["station_encoder"]
-            print(" Model loaded successfully (lazy load).")
-
-        except Exception as e:
-            # 모델 로드 실패 시, endpoints에서 잡을 수 있도록 RuntimeError 발생
-            raise RuntimeError(f"모델 로드 실패: {e}")
-
-    # 2. 특징 추출 (build_feature_row는 이제 모델/인코더 인자를 받지 않습니다)
-    feats = build_feature_row(dt_kst, line, station)
-
-    # 3. 예측 실행
+    # 모델 입력에 맞춰 컬럼을 '슬라이스'
     X = pd.DataFrame([[feats[c] for c in FEATURE_COLUMNS_V1]], columns=FEATURE_COLUMNS_V1)
 
+
+    # 전달받은 통합 모델(model)을 사용하여 예측
     yhat = model.predict(X)[0]
     pred_gton = max(0, int(round(yhat[0])))
     pred_gtoff = max(0, int(round(yhat[1])))
-
     return pred_gton, pred_gtoff, feats
+
+def generate_mock_predictions(num_cars: int = 10):
+    """칸별 혼잡도 가짜 데이터 생성"""
+    base = random.uniform(40, 100)
+    return [round(max(0, min(160, base + random.uniform(-15, 15))), 1) for _ in range(num_cars)]
+
+
+def predict_congestion_service(request: PredictRequest) -> PredictResponse:
+    """
+    요청(PredictRequest)을 받아 예측값(PredictResponse)을 생성.
+    실제 모델이 있다면 이 부분에서 호출.
+    """
+    routes_response: List[RouteResponse] = []
+
+    for route in request.routes:
+        section_responses: List[SectionResponse] = []
+
+        for section in route.sections:
+            # 도보(3)은 혼잡도 예측 대상 제외
+            if section.trafficType == 3:
+                section_responses.append(SectionResponse(**section.dict()))
+                continue
+
+            # === passStopList 처리 ===
+            station_responses: List[StationResponse] = []
+            if section.passStopList:
+                for s in section.passStopList:
+                    station_responses.append(
+                        StationResponse(
+                            **s.dict(),
+                            expectedBoarding=random.randint(0, 50),
+                            expectedAlighting=random.randint(0, 50)
+                        )
+                    )
+
+            # === sectionSummary 생성 ===
+            start_station = StartAndEndStationResponse(
+                name=section.startName or "UnknownStart",
+                expectedBoarding=random.randint(10, 60),
+                expectedAlighting=0
+            )
+
+            end_station = StartAndEndStationResponse(
+                name=section.endName or "UnknownEnd",
+                expectedBoarding=0,
+                expectedAlighting=random.randint(10, 60)
+            )
+
+            section_summary = SectionSummary(
+                startStation=start_station.dict(),
+                endStation=end_station.dict(),
+                avgCongestion=round(random.uniform(60, 95), 2),
+                maxCongestion=round(random.uniform(95, 120), 2),
+                totalExpectedBoarding=start_station.expectedBoarding,
+                totalExpectedAlighting=end_station.expectedAlighting
+            )
+
+            # === SectionResponse 완성 ===
+            section_response = SectionResponse(
+                **section.dict(),
+                sectionSummary=section_summary,
+                passStopList=station_responses
+            )
+
+            section_responses.append(section_response)
+
+        # === RouteResponse 완성 ===
+        route_response = RouteResponse(
+            routeType=route.routeType,
+            sections=section_responses
+        )
+        routes_response.append(route_response)
+
+    # === 최종 PredictResponse ===
+    return PredictResponse(
+        message="success",
+        routes=routes_response
+    )
