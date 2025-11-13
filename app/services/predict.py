@@ -85,7 +85,16 @@ def predict_congestion_service(request: PredictRequest) -> PredictResponse:
         for section in route.sections:
             # 도보(3)은 혼잡도 예측 대상 제외
             if section.trafficType == 3:
-                section_responses.append(SectionResponse(**section.dict()))
+                data = section.model_dump()
+                data.pop("passStopList", None) #원본제거
+
+                section_responses.append(
+                    SectionResponse(
+                        **data,
+                        passStopList=None,
+                        sectionSummary=None
+                    )
+                )
                 continue
 
             # === passStopList 처리 ===
@@ -124,10 +133,11 @@ def predict_congestion_service(request: PredictRequest) -> PredictResponse:
 
             # === SectionResponse 완성 ===
             section_response = SectionResponse(
-                **section.dict(),
+                **data,
                 sectionSummary=section_summary,
                 passStopList=station_responses
             )
+
 
             section_responses.append(section_response)
 
