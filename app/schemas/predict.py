@@ -45,6 +45,7 @@ class CongestionResponse(BaseModel):
 경로 기준 혼잡도 요청 & 응답
 """
 
+# 기본 역 정보
 class Station(BaseModel):
     index: int
     stationID: int
@@ -55,13 +56,15 @@ class Station(BaseModel):
 class PassStopList(BaseModel):
     stations: List[Station]
 
+# 지하철 노선 정보
 class Lane(BaseModel):
     name: str
     subwayCode: int
     subwayCityCode: int
 
+# 경로의 세부 구간 정보
 class SubPath(BaseModel):
-    trafficType: int
+    trafficType: int  # 1: 지하철, 2: 버스, 3: 도보
     distance: int
     sectionTime: int
     stationCount: Optional[int] = None
@@ -70,6 +73,132 @@ class SubPath(BaseModel):
     startName: Optional[str] = None
     endName: Optional[str] = None
     passStopList: Optional[PassStopList] = None
+    # ##TODO: 버스 혼잡도 처리 필드 추가 예정
+
+# 전체 경로 정보
+class Info(BaseModel):
+    trafficDistance: float
+    totalWalk: int
+    totalTime: int
+    payment: int
+    subwayTransitCount: int
+    firstStartStation: str
+    lastEndStation: str
+    totalStationCount: int
+    totalIntervalTime: Optional[int] = None
+
+class Path(BaseModel):
+    pathType: int
+    info: Info
+    subPath: List[SubPath]
+
+# 최상위 요청 구조
+class Result(BaseModel):
+    searchType: int
+    subwayCount: int
+    path: List[Path]
+
+class PredictRequest(BaseModel):
+    result: Result
+    datetime: Optional[str] = None  # 예측 시간 정보가 필요하다면 포함
+
+# 응답 구조 정의
+class StartAndEndStationResponse(BaseModel):
+    name: str
+    expectedBoarding: int
+    expectedAlighting: int
+
+class SectionSummary(BaseModel):
+    startStation: dict
+    endStation: dict
+    avgCongestion: float
+    maxCongestion: float
+    totalExpectedBoarding: int
+    totalExpectedAlighting: int
+
+class StationResponse(BaseModel):
+    stationID: int
+    stationName: str
+    x: str
+    y: str
+    expectedBoarding: int
+    expectedAlighting: int
+    trainCongestion: List[float]
+
+class SectionResponse(BaseModel):
+    trafficType: int
+    distance: int
+    sectionTime: int
+    stationCount: Optional[int] = None
+    lane: Optional[List[dict]] = None
+    intervalTime: Optional[int] = None
+    startName: Optional[str] = None
+    endName: Optional[str] = None
+    passStopList: Optional[List[StationResponse]] = None
+    sectionSummary: Optional[SectionSummary] = None
+    # ##TODO: 버스 혼잡도 처리 필드 추가 예정
+
+class RouteResponse(BaseModel):
+    routeType: int
+    sections: List[SectionResponse]
+
+class PredictResponse(BaseModel):
+    message: str
+    routes: List[RouteResponse]
+from pydantic import BaseModel
+from typing import List, Optional, Union
+
+# =========================
+# 기본 역 정보 및 정차역 리스트
+# =========================
+
+class Station(BaseModel):
+    index: int
+    stationID: int
+    stationName: str
+    x: str
+    y: str
+
+class PassStopList(BaseModel):
+    stations: List[Station]
+
+# =========================
+# 지하철/버스 노선 정보
+# =========================
+
+class SubwayLane(BaseModel):
+    name: str
+    subwayCode: int
+    subwayCityCode: int
+
+class BusLane(BaseModel):
+    busNo: str
+    type: int
+    busID: int
+    busLocalBlID: str
+    busCityCode: int
+    busProviderCode: int
+
+LaneType = Union[SubwayLane, BusLane]
+
+# =========================
+# 경로의 세부 구간 정보
+# =========================
+
+class SubPath(BaseModel):
+    trafficType: int  # 1: 지하철, 2: 버스, 3: 도보
+    distance: int
+    sectionTime: int
+    stationCount: Optional[int] = None
+    lane: Optional[List[LaneType]] = None
+    intervalTime: Optional[int] = None
+    startName: Optional[str] = None
+    endName: Optional[str] = None
+    passStopList: Optional[PassStopList] = None
+
+# =========================
+# 전체 경로 정보
+# =========================
 
 class Info(BaseModel):
     trafficDistance: float
@@ -94,7 +223,11 @@ class Result(BaseModel):
 
 class PredictRequest(BaseModel):
     result: Result
-    datetime: Optional[str] = None  # 예측 시간 정보가 필요하다면 포함
+    datetime: Optional[str] = None
+
+# =========================
+# 응답 스키마
+# =========================
 
 class StartAndEndStationResponse(BaseModel):
     name: str
@@ -129,6 +262,7 @@ class SectionResponse(BaseModel):
     endName: Optional[str] = None
     passStopList: Optional[List[StationResponse]] = None
     sectionSummary: Optional[SectionSummary] = None
+    # ##TODO: 버스 혼잡도 필드 추가 가능
 
 class RouteResponse(BaseModel):
     routeType: int

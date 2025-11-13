@@ -1,26 +1,22 @@
 import random
 from datetime import datetime
 import pandas as pd
-import numpy as np
 from typing import List
 
 from app.config.settings import KST
 from app.schemas.predict import (
     PredictResponse, PredictRequest, RouteResponse, SectionResponse,
     StationResponse, StartAndEndStationResponse, SectionSummary,
-    CongestionResponse
+    SubwayLane, BusLane
 )
 
-# 기존 모델 관련 로드/피처 빌드 함수
 FEATURE_COLUMNS_V1 = ["year", "month", "hour", "line_encoded", "station_encoded"]
-
 
 def parse_datetime_kst(dt_str: str) -> datetime:
     dt = datetime.fromisoformat(dt_str)
     if dt.tzinfo is None:
         return dt.replace(tzinfo=KST)
     return dt.astimezone(KST)
-
 
 def build_feature_row(dt_kst, line, station, line_encoder, station_encoder):
     return {
@@ -31,7 +27,6 @@ def build_feature_row(dt_kst, line, station, line_encoder, station_encoder):
         "station_encoded": int(station_encoder.transform([station])[0])
     }
 
-
 def predict_single(line: str, station: str, dt_kst: datetime, model, line_encoder, station_encoder):
     feats = build_feature_row(dt_kst, line, station, line_encoder, station_encoder)
     X = pd.DataFrame([[feats[c] for c in FEATURE_COLUMNS_V1]], columns=FEATURE_COLUMNS_V1)
@@ -41,47 +36,41 @@ def predict_single(line: str, station: str, dt_kst: datetime, model, line_encode
     pred_gtoff = max(0, int(round(yhat[1])))
     return pred_gton, pred_gtoff, feats
 
-
 def generate_mock_train_congestion(num_cars: int = 10):
-    """칸별 혼잡도 (mock 데이터)"""
     base = random.uniform(40, 100)
     return [round(max(0, min(160, base + random.uniform(-15, 15))), 1) for _ in range(num_cars)]
-
-
-def get_congestion_prediction(req) -> CongestionResponse:
-    """
-    /predict/train_congestion용: 칸별 혼잡도 예측
-    """
-    line = req.line
-    station = req.station
-    datetime_kst = parse_datetime_kst(req.datetime)
-    congestion_by_car = generate_mock_train_congestion(10)
-
-    return CongestionResponse(
-        line=line,
-        station=station,
-        datetime=datetime_kst.isoformat(),
-        congestion_by_car=congestion_by_car
-    )
-
 
 # ==============================
 #  경로 전체 혼잡도 예측
 # ==============================
 def predict_congestion_service(request: PredictRequest, model=None, line_encoder=None, station_encoder=None) -> PredictResponse:
-    """
-    /predict/congestion용:
-    """
     routes_response: List[RouteResponse] = []
 
-    # request.result.path 사용
     for path in request.result.path:
         section_responses: List[SectionResponse] = []
 
         for sub in path.subPath:
             if sub.trafficType == 3:  # 도보
-                section_responses.append(SectionResponse(**sub.dict()))
+                section_responses.append(
+                    SectionResponse(
+                        trafficType=sub.trafficType,
+                        distance=sub.distance,
+                        sectionTime=sub.sectionTime
+                    )
+                )
                 continue
+
+            # === line name 추출 ===
+            if sub.lane:
+                lane_info = sub.lane[0]
+                if isinstance(lane_info, SubwayLane):
+                    line_name = lane_info.name
+                elif isinstance(lane_info, BusLane):
+                    line_name = lane_info.busNo
+                else:
+                    line_name = "UnknownLine"
+            else:
+                line_name = "UnknownLine"
 
             # === 역 리스트 처리 ===
             station_responses: List[StationResponse] = []
@@ -89,37 +78,27 @@ def predict_congestion_service(request: PredictRequest, model=None, line_encoder
                 for s in sub.passStopList.stations:
                     try:
                         dt_kst = parse_datetime_kst(request.datetime)
-                        line_name = sub.lane[0].name if sub.lane else "UnknownLine"
                         gton, gtoff, _ = predict_single(
                             line_name, s.stationName, dt_kst,
                             model=model, line_encoder=line_encoder, station_encoder=station_encoder
                         )
-
+                        congestion = generate_mock_train_congestion(10)
+                    except Exception:
+                        gton = random.randint(0, 50)
+                        gtoff = random.randint(0, 50)
                         congestion = generate_mock_train_congestion(10)
 
-                        station_responses.append(
-                            StationResponse(
-                                stationID=s.stationID,
-                                stationName=s.stationName,
-                                x=s.x,
-                                y=s.y,
-                                expectedBoarding=gton,
-                                expectedAlighting=gtoff,
-                                trainCongestion=congestion
-                            )
+                    station_responses.append(
+                        StationResponse(
+                            stationID=s.stationID,
+                            stationName=s.stationName,
+                            x=s.x,
+                            y=s.y,
+                            expectedBoarding=gton,
+                            expectedAlighting=gtoff,
+                            trainCongestion=congestion
                         )
-                    except Exception:
-                        station_responses.append(
-                            StationResponse(
-                                stationID=s.stationID,
-                                stationName=s.stationName,
-                                x=s.x,
-                                y=s.y,
-                                expectedBoarding=random.randint(0, 50),
-                                expectedAlighting=random.randint(0, 50),
-                                trainCongestion=generate_mock_train_congestion(10)
-                            )
-                        )
+                    )
 
             # === 섹션 요약 ===
             start_station = StartAndEndStationResponse(
@@ -143,9 +122,17 @@ def predict_congestion_service(request: PredictRequest, model=None, line_encoder
             )
 
             section_response = SectionResponse(
-                **{k: v for k, v in sub.dict().items() if k != "passStopList"},
-                sectionSummary=section_summary,
-                passStopList=station_responses
+                trafficType=sub.trafficType,
+                distance=sub.distance,
+                sectionTime=sub.sectionTime,
+                stationCount=sub.stationCount,
+                lane=[l.dict() for l in sub.lane] if sub.lane else None,
+                intervalTime=sub.intervalTime,
+                startName=sub.startName,
+                endName=sub.endName,
+                passStopList=station_responses,
+                sectionSummary=section_summary
+                # ##TODO: 버스 혼잡도 필드 추가 가능
             )
 
             section_responses.append(section_response)
