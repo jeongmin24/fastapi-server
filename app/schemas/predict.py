@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Dict
 from typing import List, Optional
+
 """
 혼잡도 요청 응답 dto
 """
@@ -43,66 +44,94 @@ class CongestionResponse(BaseModel):
 """
 경로 기준 혼잡도 요청 & 응답
 """
+
 class Station(BaseModel):
-    index: Optional[int] #정류장순서
-    stationID: Optional[int] #지하철역 or 버스정류장 ID
-    stationName: Optional[str] #정류장 이름
+    index: int
+    stationID: int
+    stationName: str
+    x: str
+    y: str
+
+class PassStopList(BaseModel):
+    stations: List[Station]
 
 class Lane(BaseModel):
-    name: Optional[str] #지하철 노선명
-    busNo: Optional[str] #버스 번호
-    subwayCode: Optional[int]
-    busID: Optional[int]
+    name: str
+    subwayCode: int
+    subwayCityCode: int
 
-class Section(BaseModel):
-    trafficType: int               # 1=지하철, 2=버스, 3=도보
-    lanes: Optional[List[Lane]] #같은 구간을 지나는 노선
-    distance: Optional[float] #이동거리
-    sectionTime: Optional[int] #이동소요시간
-    stationCount: Optional[int] #이동하여 정차하는 정거장수
-    way: Optional[str] #방면 (지하철)
-    wayCode: Optional[int] #방면 정보 1-상행 2-하행
-    startName: Optional[str] #승차정류장/역 명
-    startX: Optional[float] #승차정류장/역 X좌표
-    startY: Optional[float] #승차정류장/역 Y좌표
-    endName: Optional[str] #하차정류장/역 명
-    endX: Optional[float] #하차정류장/역 X좌표
-    endY: Optional[float] #하차정류장/역 Y좌표
-    passStopList: Optional[List[Station]] #경로 상세구간
+class SubPath(BaseModel):
+    trafficType: int
+    distance: int
+    sectionTime: int
+    stationCount: Optional[int] = None
+    lane: Optional[List[Lane]] = None
+    intervalTime: Optional[int] = None
+    startName: Optional[str] = None
+    endName: Optional[str] = None
+    passStopList: Optional[PassStopList] = None
 
-class Route(BaseModel):
-    routeType: int                 # 1=지하철, 2=버스, 3=지하철+버스
-    sections: List[Section] #한 경로의 구간별 정보 (subPath)
+class Info(BaseModel):
+    trafficDistance: float
+    totalWalk: int
+    totalTime: int
+    payment: int
+    subwayTransitCount: int
+    firstStartStation: str
+    lastEndStation: str
+    totalStationCount: int
+    totalIntervalTime: Optional[int] = None
+
+class Path(BaseModel):
+    pathType: int
+    info: Info
+    subPath: List[SubPath]
+
+class Result(BaseModel):
+    searchType: int
+    subwayCount: int
+    path: List[Path]
 
 class PredictRequest(BaseModel):
-    routes: List[Route] #여러 후보 경로(path)
+    result: Result
+    datetime: Optional[str] = None  # 예측 시간 정보가 필요하다면 포함
 
-"""
-경로기준 혼잡도 응답 dto
-"""
-class StationResponse(Station):
-    expectedBoarding: Optional[int]
-    expectedAlighting: Optional[int]
-
-#승하차 정류장의 승차,하차인원
 class StartAndEndStationResponse(BaseModel):
     name: str
-    expectedBoarding: Optional[int]
-    expectedAlighting: Optional[int]
+    expectedBoarding: int
+    expectedAlighting: int
 
 class SectionSummary(BaseModel):
-    startStation: Optional[dict] #승차정류장정보
-    endStation: Optional[dict]  #하차정류장정보
-    avgCongestion: Optional[float]
-    maxCongestion: Optional[float]
-    totalExpectedBoarding: Optional[int]
-    totalExpectedAlighting: Optional[int]
+    startStation: dict
+    endStation: dict
+    avgCongestion: float
+    maxCongestion: float
+    totalExpectedBoarding: int
+    totalExpectedAlighting: int
 
-class SectionResponse(Section):
-    sectionSummary: Optional[SectionSummary]
-    passStopList: Optional[List[StationResponse]]
+class StationResponse(BaseModel):
+    stationID: int
+    stationName: str
+    x: str
+    y: str
+    expectedBoarding: int
+    expectedAlighting: int
+    trainCongestion: List[float]
 
-class RouteResponse(Route):
+class SectionResponse(BaseModel):
+    trafficType: int
+    distance: int
+    sectionTime: int
+    stationCount: Optional[int] = None
+    lane: Optional[List[dict]] = None
+    intervalTime: Optional[int] = None
+    startName: Optional[str] = None
+    endName: Optional[str] = None
+    passStopList: Optional[List[StationResponse]] = None
+    sectionSummary: Optional[SectionSummary] = None
+
+class RouteResponse(BaseModel):
+    routeType: int
     sections: List[SectionResponse]
 
 class PredictResponse(BaseModel):
