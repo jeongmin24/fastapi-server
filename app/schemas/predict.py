@@ -86,6 +86,7 @@ class StationResponse(BaseModel):
     stationName: Optional[str]  # 정류장 이름
     expectedBoarding: Optional[int] = None
     expectedAlighting: Optional[int] = None
+    predictedCongestionCar: Optional[List[float]] = None
 
 #승하차 정류장의 승차,하차인원
 class StartAndEndStationResponse(BaseModel):

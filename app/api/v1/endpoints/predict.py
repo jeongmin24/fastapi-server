@@ -9,7 +9,7 @@ from app.schemas.predict import PredictSingleRequest, PredictSingleResponse, Con
 from app.services.predict import parse_datetime_kst, predict_single, \
     predict_congestion_service  # app.services.predict에 필요한 함수가 있다고 가정합니다.
 from app.services.prediction_service import \
-    get_congestion_prediction  # app.services.prediction_service에 필요한 함수가 있다고 가정합니다.
+    get_congestion_prediction, predict_routes_congestion  # app.services.prediction_service에 필요한 함수가 있다고 가정합니다.
 from datetime import datetime
 from huggingface_hub import hf_hub_download  # Hugging Face Hub 라이브러리 추가
 
@@ -109,5 +109,5 @@ def train_congestion_api(req: CongestionRequest):
 
 @router.post("/predict/congestion", response_model=PredictResponse, summary="경로기반 혼잡도 예측 api")
 async def predict_congestion(request: PredictRequest):
-    response = predict_congestion_service(request)
+    response = predict_routes_congestion(request)
     return response
