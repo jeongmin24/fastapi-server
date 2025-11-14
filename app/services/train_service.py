@@ -1,22 +1,15 @@
-import os
-
-import requests
-import pandas as pd
-import joblib
-import numpy as np
-from dateutil.relativedelta import relativedelta
-
-from sklearn.ensemble import RandomForestRegressor #회귀모델
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import train_test_split
 from datetime import datetime, timedelta
+import os, joblib, numpy as np, pandas as pd
 
+from dateutil.relativedelta import relativedelta
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
 from sklearn.multioutput import MultiOutputRegressor
+from sklearn.model_selection import train_test_split
 
-from app.common.fetch import fetch_api
 from app.config.settings import GENERAL_KEY
 from app.services.preprocessing import preprocess_stats_time_response
-
+from app.common.fetch import fetch_api
 
 # 1. 최근 6개월 리스트 구하기
 def get_recent_months(n_months: int = 6) -> list[str]:
@@ -25,7 +18,7 @@ def get_recent_months(n_months: int = 6) -> list[str]:
         (today - relativedelta(months=i)).strftime("%Y%m")
         for i in range(n_months)
     ]
-    print(f"✅ 수집할 월 목록: {months}")
+    print(f"수집할 월 목록: {months}")
     return months
 
 
@@ -50,14 +43,14 @@ def train_for_station_line(months: list[str], line: str, station: str):
     x_list = []
     y_list = []
     for m in months:
-        print(f"📅 {m} 데이터 수집 중...")
+        print(f"{m} 데이터 수집 중...")
         # 날짜 하나씩 API로 호출해서 DataFrame 얻기
         df = build_dataset_for_date(m, line=line, station=station)
 
         if df.empty:
-            print(f"⚠️ {m} 데이터 없음. 건너뜀")
+            print(f"{m} 데이터 없음. 건너뜀")
             continue
-        print(f"➡️ {len(df)}개의 행이 로드됨")
+        print(f"{len(df)}개의 행이 로드됨")
 
         # row를 preprocess_stats_response(row)(전처리함수)에 전달
         for _, row in df.iterrows():
@@ -76,13 +69,13 @@ def train_for_station_line(months: list[str], line: str, station: str):
     # 학습/검증 데이터를 8:2로 나눔
     X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
 
-    print(f"📊 최종 학습 데이터 크기: X={len(x)}, Y={len(y)}")
+    print(f"최종 학습 데이터 크기: X={len(x)}, Y={len(y)}")
 
     # MultiOutputRegressor로 학습 진행
     model = MultiOutputRegressor(RandomForestRegressor())
     model.fit(X_train, y_train) #이런 feature(x)가 주어졌을때 y를 예측하는 법 학습
 
-    print("✅ 모델 학습 완료!")
+    print("모델 학습 완료!")
     # 모델 평가 및 저장
     evaluate_model(model, X_test, y_test)
     save_model(model, line, station)
@@ -100,7 +93,7 @@ def save_model(model, line, station):
 
 # 모델 성능 평가
 def evaluate_model(model, X_test, y_test):
-    print("🔍 모델 평가 중...")
+    print("모델 평가 중...")
     pred = model.predict(X_test) # predict(X_test)로 예측한 값과 실제 y_test를 비교
     rmse = np.sqrt(mean_squared_error(y_test, pred)) #예측값 vs 실제값 비교하여 RMSE(평균 제곱근 오차)를 출력
     print(f"[{datetime.today()}] RMSE: {rmse:.2f}")
@@ -111,10 +104,3 @@ def evaluate_model(model, X_test, y_test):
     # 로그 파일 저장
     with open("logs/eval.log", "a") as f:
         f.write(f"{datetime.today()} RMSE: {rmse:.2f}\n")
-
-
-if __name__ == "__main__":
-    print("🔥 train.py 시작됨")
-    # 최근 6개월 데이터로 하습
-    months = get_recent_months(n_months=6)
-    train_for_station_line(months, line="9호선", station="김포공항")

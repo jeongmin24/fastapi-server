@@ -11,10 +11,10 @@ def fetch_api(url: str):
         res.raise_for_status()
         data = res.json()
 
-        # 1️⃣ root key 자동 감지
+        # root key 자동 감지
         root_key = next(iter(data))
 
-        # 2️⃣ RESULT 키가 없을 수도 있음
+        # RESULT 키가 없을 수도 있음
         result = data[root_key].get("RESULT", None)
         if result:
             code = result.get("CODE", "")
@@ -23,13 +23,13 @@ def fetch_api(url: str):
             if code == "INFO-000":  # 정상
                 return data
             elif code == "INFO-200":  # 데이터 없음
-                print(f"⚠️ 데이터 없음: {message}")
+                print(f"데이터 없음: {message}")
                 return {root_key: {"row": []}}
             else:
                 # 다른 에러 코드 (예: 인증 오류 등)
                 raise HTTPException(status_code=400, detail=f"{code}: {message}")
         else:
-            # ✅ RESULT 자체가 없으면 정상 데이터로 간주
+            # RESULT 자체가 없으면 정상 데이터로 간주
             return data
 
     except requests.exceptions.Timeout:
